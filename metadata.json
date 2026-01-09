@@ -1,0 +1,7 @@
+{
+  "name": "Copy of novo githu",
+  "description": "Imatec",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
