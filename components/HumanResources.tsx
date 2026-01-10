@@ -1,20 +1,20 @@
-
 import React, { useState, useMemo } from 'react';
 import { 
   Employee, HrTransaction, HrVacation, SalarySlip, Profession, 
-  Contract, AttendanceRecord, Company, ViewState 
+  Contract, AttendanceRecord, Company, ViewState, CashRegister, PaymentMethod 
 } from '../types';
 import { 
-  generateId, formatCurrency, formatDate, calculateINSS, calculateIRT 
+  generateId, formatCurrency, formatDate, calculateINSS, calculateIRT, numberToExtenso 
 } from '../utils';
 import { 
   Users, Briefcase, Calculator, Calendar, 
   FileText, Printer, Search, Plus, X, User, 
   MoreVertical, RefreshCw, Loader2, CheckCircle, AlertTriangle, 
   Shield, ChevronDown, ChevronUp, Gavel, Wallet, TrendingUp, CheckSquare, Square, Play, Trash, FileSpreadsheet, ChevronRight, FileCheck, Circle, Info,
-  ArrowRight, CreditCard, ImageIcon, Clock, Save
+  ArrowRight, CreditCard, ImageIcon, Clock, Save, DollarSign, ArrowDownLeft
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
+import { printDocument } from '../utils/exportUtils';
 import SalaryMap from './SalaryMap';
 import ProfessionManager from './ProfessionManager';
 import Employees from './Employees';
@@ -38,6 +38,12 @@ const AttendanceGrid: React.FC<AttendanceGridProps> = ({ emp, processingMonth, p
     const daysInMonth = new Date(processingYear, processingMonth, 0).getDate();
     const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
     const dayNames = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'];
+
+    const handleFullSelection = (type: string) => {
+        const newAtt = { ...attData };
+        days.forEach(d => { newAtt[d] = type; });
+        setAttData(newAtt);
+    };
 
     return (
         <div className="fixed inset-0 z-[120] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
@@ -111,11 +117,7 @@ const AttendanceGrid: React.FC<AttendanceGridProps> = ({ emp, processingMonth, p
                                         </td>
                                     ))}
                                     <td className="border border-slate-300 p-0 text-center bg-slate-100 cursor-pointer hover:bg-slate-200" 
-                                        onClick={() => {
-                                            const newAtt = { ...attData };
-                                            days.forEach(d => { newAtt[d] = row.key; });
-                                            setAttData(newAtt);
-                                        }}>
+                                        onClick={() => row.isRadio && handleFullSelection(row.key)}>
                                         {row.isRadio && (
                                             <div className="w-4 h-4 rounded-full border-2 border-slate-400 mx-auto bg-white flex items-center justify-center">
                                                 <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
@@ -124,7 +126,6 @@ const AttendanceGrid: React.FC<AttendanceGridProps> = ({ emp, processingMonth, p
                                     </td>
                                 </tr>
                             ))}
-                            {/* Subsídios em Branco para Inserção Manual */}
                             <tr className="bg-emerald-50">
                                 <td className="border border-slate-300 p-1 font-black text-[10px] uppercase text-emerald-800">Subsídio Alimentação</td>
                                 <td colSpan={daysInMonth} className="border border-slate-300 p-0">
@@ -174,21 +175,31 @@ interface SalaryReceiptProps {
 const SalaryReceipt: React.FC<SalaryReceiptProps> = ({ data, months, onClose, onProcess }) => {
     const { emp } = data;
     const [editableValues, setEditableValues] = useState({
-        baseSalary: data.baseSalary || 0,
-        complement: 0,
+        baseSalary: data.baseSalary || emp.baseSalary || 0,
+        complement: emp.complementSalary || 0,
         bonus: 0,
         subsidyFood: data.subsAlimManual || emp.subsidyFood || 0,
         subsidyTransport: data.subsTransManual || emp.subsidyTransport || 0,
-        absences: data.hoursAbsence || 0
+        subsidyHousing: emp.subsidyHousing || 0,
+        subsidyVacation: emp.subsidyVacation || 0,
+        subsidyChristmas: emp.subsidyChristmas || 0,
+        subsidyFamily: emp.subsidyFamily || 0,
+        absences: data.hoursAbsence || 0,
+        advances: 0
     });
 
     const calculatedData = useMemo(() => {
         const absenceVal = (editableValues.baseSalary / 30) * editableValues.absences;
-        const grossTotal = editableValues.baseSalary + editableValues.complement + editableValues.bonus + editableValues.subsidyFood + editableValues.subsidyTransport - absenceVal;
+        const totalBaseIliquido = editableValues.baseSalary + editableValues.complement - absenceVal + editableValues.bonus;
+        
         const inss = calculateINSS(editableValues.baseSalary + editableValues.complement - absenceVal);
-        const irt = calculateIRT(grossTotal, inss);
-        const netTotal = grossTotal - inss - irt;
-        return { grossTotal, inss, irt, netTotal, absenceVal };
+        const subsidiesTotal = editableValues.subsidyFood + editableValues.subsidyTransport + editableValues.subsidyHousing + editableValues.subsidyVacation + editableValues.subsidyChristmas + editableValues.subsidyFamily;
+        const totalVencimentoAntesImpostos = totalBaseIliquido + subsidiesTotal;
+        
+        const irt = calculateIRT(totalVencimentoAntesImpostos, inss);
+        const netTotal = totalVencimentoAntesImpostos - inss - irt - editableValues.advances;
+        
+        return { totalBaseIliquido, inss, irt, netTotal, absenceVal, totalVencimentoAntesImpostos };
     }, [editableValues]);
 
     const handleProcessFinal = () => {
@@ -199,108 +210,328 @@ const SalaryReceipt: React.FC<SalaryReceiptProps> = ({ data, months, onClose, on
             baseSalary: editableValues.baseSalary,
             allowances: editableValues.complement,
             bonuses: editableValues.bonus,
-            subsidies: editableValues.subsidyFood + editableValues.subsidyTransport,
+            subsidies: calculatedData.totalVencimentoAntesImpostos - calculatedData.totalBaseIliquido,
             subsidyFood: editableValues.subsidyFood,
             subsidyTransport: editableValues.subsidyTransport,
-            subsidyFamily: 0,
-            subsidyHousing: 0,
+            subsidyFamily: editableValues.subsidyFamily,
+            subsidyHousing: editableValues.subsidyHousing,
             absences: editableValues.absences,
-            advances: 0,
-            grossTotal: calculatedData.grossTotal,
+            advances: editableValues.advances,
+            grossTotal: calculatedData.totalVencimentoAntesImpostos,
             inss: calculatedData.inss,
             irt: calculatedData.irt,
             netTotal: calculatedData.netTotal,
             month: data.month,
             year: data.year,
-            isProcessed: true
+            isProcessed: true,
+            attendanceDetails: data.attendanceDetails
         };
         onProcess(slip);
     };
 
     return (
         <div className="fixed inset-0 z-[130] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in zoom-in-95">
-            <div className="bg-white rounded-none shadow-2xl w-full max-w-6xl max-h-[85vh] p-8 flex flex-col font-sans text-slate-900 relative border-4 border-slate-800 scale-90 origin-center overflow-auto">
-                <button onClick={onClose} className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-full transition text-slate-400 print:hidden"><X/></button>
-                
-                <div className="text-center mb-6 border-b-4 border-slate-200 pb-2">
-                    <h1 className="text-xl font-black uppercase tracking-[0.2em] border-y border-slate-800 py-1 inline-block px-10 italic">Recibo de Salário</h1>
-                </div>
-
-                <div className="flex justify-between items-end mb-4">
-                    <div className="flex items-end gap-6">
-                        <span className="text-2xl font-black uppercase italic tracking-tighter text-slate-800">{emp.name.toUpperCase()}</span>
+            <div className="bg-white rounded-none shadow-2xl w-full max-w-[1200px] p-8 flex flex-col font-sans text-slate-900 border-4 border-slate-800 overflow-auto max-h-[90vh]">
+                <div className="flex justify-between items-start mb-6">
+                    <div className="bg-slate-900 text-white px-8 py-2 font-black uppercase text-lg tracking-widest border-l-8 border-blue-500">
+                        RECIBO SALARIO
                     </div>
                     <div className="text-right">
-                        <span className="text-base font-bold text-slate-600 uppercase italic">{months[data.month - 1]} de {data.year}</span>
+                        <p className="text-xl font-black text-slate-700">{months[data.month - 1]} de {data.year}</p>
                     </div>
                 </div>
 
-                <div className="flex-1 space-y-0.5">
-                    <div className="grid grid-cols-[40px_1fr_100px_180px] gap-2 border-b-2 border-slate-800 pb-1 text-[9px] font-black uppercase text-slate-600">
+                <div className="flex items-center gap-4 mb-8">
+                    <span className="text-3xl font-black text-slate-900">{emp.employeeNumber || '2'}</span>
+                    <span className="text-3xl font-black uppercase tracking-tighter text-slate-800">{emp.name}</span>
+                </div>
+
+                <div className="flex-1 space-y-1">
+                    <div className="grid grid-cols-[60px_1fr_100px_200px] gap-4 border-b-2 border-slate-300 pb-1 text-xs font-black uppercase text-slate-600 px-2">
                         <span>Cód</span>
-                        <span className="text-center">Descrição do Rendimento / Desconto</span>
-                        <span className="text-center">Qtd/Ref</span>
-                        <span className="text-right pr-4">Valor (AOA)</span>
+                        <span className="text-center">Secretaria</span>
+                        <span className="text-center">QTD</span>
+                        <span className="text-right">VALOR</span>
                     </div>
 
-                    <div className="space-y-0.5 py-2">
+                    <div className="space-y-2 py-4">
                         {[
-                            { code: '01', label: 'Vencimento Base Profissional', key: 'baseSalary', qty: 30 },
-                            { code: '02', label: 'Complemento Salarial', key: 'complement', qty: '-' },
-                            { code: '03', label: 'Abonos e Prémios', key: 'bonus', qty: '-' },
-                            { code: '04', label: 'Faltas Injustificadas', key: 'absences', qty: editableValues.absences, isNegative: true },
-                            { code: '08', label: 'Subsidio Transporte', key: 'subsidyTransport', qty: '-' },
-                            { code: '09', label: 'Subsidio Alimentação', key: 'subsidyFood', qty: '-' },
-                        ].map((row, idx) => (
-                            <div key={idx} className="grid grid-cols-[40px_1fr_100px_180px] gap-2 items-center h-8 border-b border-slate-50">
-                                <span className="font-bold text-slate-400 text-[9px]">{row.code}</span>
-                                <span className="font-bold text-slate-700 text-[10px] uppercase italic">{row.label}</span>
-                                <span className="text-center font-bold text-slate-500 text-[10px]">{row.qty}</span>
-                                <div className="flex justify-end pr-4">
-                                    <input 
-                                        type="number"
-                                        className="bg-slate-50 border border-slate-200 rounded px-2 py-0.5 w-28 text-right font-black text-xs outline-none focus:border-blue-500 shadow-inner"
-                                        value={(editableValues as any)[row.key]}
-                                        onChange={e => setEditableValues({...editableValues, [row.key]: Number(e.target.value)})}
-                                    />
+                            { code: '01', label: 'Vencimento Base para a Categoria Profissional', key: 'baseSalary', qtd: 31 },
+                            { code: '02', label: 'Complemento Salarial', key: 'complement', qtd: 27 },
+                            { code: '03', label: `Abatimento de Faltas Admissão(${editableValues.absences}d) (Total Horas=${editableValues.absences*8}Hrs)`, key: 'absences', qtd: editableValues.absences, isNegative: true, calc: calculatedData.absenceVal },
+                            { code: '04', label: 'Horas Extra', key: 'bonus', qtd: 0 },
+                            { code: '04', label: 'Horas Perdidas', key: 'lost', qtd: 0, disabled: true },
+                            { code: '05', label: 'Total de Vencimento Base Iliquido (01+02-03+04)', key: 'totalBase', isTotal: true, val: calculatedData.totalBaseIliquido },
+                            { code: '', label: 'Subsidios', isSubheader: true },
+                            { code: '06', label: 'Subsidio de Férias', key: 'subsidyVacation', qtd: 'Vg' },
+                            { code: '07', label: 'Subsidio de Natal', key: 'subsidyChristmas', qtd: 'Vg' },
+                            { code: '', label: 'Abono de Familia (Isento até 5000 akz)', key: 'subsidyFamily', qtd: 'Vg' },
+                            { code: '08', label: 'Subsidio Transporte', key: 'subsidyTransport', qtd: 0 },
+                            { code: '09', label: 'Subsidio Alimentação', key: 'subsidyFood', qtd: 0 },
+                            { code: '10', label: 'Subsidio Alojamento', key: 'subsidyHousing', qtd: 'Vg' },
+                            { code: '13', label: 'Total de Vencimento antes de Impostos [05]+[06]+[07]+[08]+[09]+[10]+[11]-[12]', isTotal: true, val: calculatedData.totalVencimentoAntesImpostos },
+                        ].map((row, idx) => {
+                            if (row.isSubheader) return <div key={idx} className="font-black text-slate-800 text-xs px-2 pt-2">{row.label}</div>;
+                            if (row.isTotal) return (
+                                <div key={idx} className="grid grid-cols-[60px_1fr_100px_200px] gap-4 items-center h-10 border-t border-slate-300 font-black text-slate-800">
+                                    <span className="text-xs">{row.code}</span>
+                                    <span className="text-xs uppercase">{row.label}</span>
+                                    <span className="text-center"></span>
+                                    <span className="text-right border-t border-slate-800 pr-2">{formatCurrency(row.val!).replace('Kz','')}</span>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                            return (
+                                <div key={idx} className="grid grid-cols-[60px_1fr_100px_200px] gap-4 items-center h-8">
+                                    <span className="font-bold text-slate-400 text-xs">{row.code}</span>
+                                    <span className="font-bold text-slate-700 text-xs">{row.label}</span>
+                                    <span className="text-center font-bold text-slate-500 text-xs">{row.qtd}</span>
+                                    <div className="flex justify-end pr-2">
+                                        {row.disabled ? (
+                                            <span className="font-black text-slate-400 text-sm">0,00</span>
+                                        ) : row.calc !== undefined ? (
+                                            <span className="font-black text-slate-800 text-sm">- {formatCurrency(row.calc).replace('Kz','')}</span>
+                                        ) : (
+                                            <input 
+                                                type="number"
+                                                className="bg-white border border-slate-400 rounded-full px-4 py-1 w-40 text-right font-black text-sm outline-none focus:border-blue-500 shadow-sm"
+                                                value={(editableValues as any)[row.key]}
+                                                onChange={e => setEditableValues({...editableValues, [row.key]: Number(e.target.value)})}
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
 
-                    <div className="grid grid-cols-[1fr_180px] border-t-2 border-slate-800 pt-2 pb-2 mt-4 bg-slate-50 px-2 rounded-lg">
-                        <span className="font-black text-slate-800 text-[11px] uppercase italic">Total de Vencimento Bruto</span>
-                        <div className="text-right pr-4 font-black text-base text-slate-900">
-                            {formatCurrency(calculatedData.grossTotal)}
-                        </div>
-                    </div>
-
-                    <div className="space-y-2 pt-4">
-                        <p className="font-black text-slate-800 text-[9px] uppercase tracking-widest border-b pb-1">Impostos LGT Angola</p>
-                        <div className="grid grid-cols-2 gap-6">
-                             <div className="space-y-1">
-                                <div className="flex justify-between items-center text-[10px]">
-                                    <span className="font-bold text-slate-500 uppercase italic">Segurança Social (3%)</span>
-                                    <span className="font-black text-red-600 italic">-{formatCurrency(calculatedData.inss)}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-[10px]">
-                                    <span className="font-bold text-slate-500 uppercase italic">IRT</span>
-                                    <span className="font-black text-red-600 italic">-{formatCurrency(calculatedData.irt)}</span>
-                                </div>
+                    <div className="space-y-4 py-4 border-t-2 border-slate-100">
+                         <div className="flex flex-col items-end space-y-1">
+                             <div className="flex gap-4 items-center">
+                                <span className="font-black text-red-600 text-xs uppercase">Impostos</span>
+                                <span className="font-black text-red-600 text-xs">ISENTO</span>
                              </div>
-                             <div className="bg-slate-900 text-white p-4 rounded-2xl flex flex-col items-center justify-center shadow-lg">
-                                <span className="text-[9px] font-black uppercase tracking-widest text-blue-400 italic">Líquido a Pagar</span>
-                                <span className="text-xl font-black font-mono tracking-tighter">{formatCurrency(calculatedData.netTotal)}</span>
+                             <div className="flex justify-between w-full max-w-[500px]">
+                                <span className="font-bold text-slate-600 text-xs">Vencimento Liquido depois de Impostos [ 13]-[14]-[15]</span>
+                                <span className="font-black text-slate-900 text-sm">{formatCurrency(calculatedData.netTotal).replace('Kz','')}</span>
                              </div>
-                        </div>
+                             <div className="flex gap-4 items-center">
+                                <button className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-[10px] font-black uppercase">Arredondar</button>
+                                <div className="border border-slate-400 rounded-full px-4 py-1 w-40 text-right font-black text-sm bg-slate-50">143100</div>
+                             </div>
+                             <div className="flex justify-between w-full max-w-[500px] border-t-2 border-slate-800 pt-1">
+                                <span className="font-black text-slate-900 text-sm uppercase">TOTAL A RECEBER</span>
+                                <span className="font-black text-slate-900 text-sm">{formatCurrency(calculatedData.netTotal).replace('Kz','')}</span>
+                             </div>
+                         </div>
                     </div>
                 </div>
 
-                <div className="mt-6 flex justify-end gap-3 print:hidden">
-                    <button onClick={onClose} className="px-6 py-2 bg-slate-200 text-slate-600 font-black uppercase rounded-xl hover:bg-slate-300 transition text-xs">Voltar</button>
-                    <button onClick={handleProcessFinal} className="bg-[#a7f3d0] hover:bg-[#86efac] text-slate-700 font-black px-12 py-2 rounded-xl shadow-lg transition transform active:scale-95 text-base uppercase tracking-widest">Processar Salário</button>
+                <div className="mt-8 flex justify-between items-center border-t pt-6">
+                    <div>
+                        <p className="text-red-600 font-black text-sm">Total de Abonos e Adiantamentos 0,00</p>
+                    </div>
+                    <div className="flex gap-6 items-center">
+                        <span className="text-red-600 font-black text-xl italic uppercase">Valor a pagar ={formatCurrency(calculatedData.netTotal).replace('Kz','')}</span>
+                        <div className="flex gap-2">
+                            <button onClick={onClose} className="px-8 py-3 bg-slate-200 text-slate-600 font-black uppercase rounded-xl hover:bg-slate-300 transition text-xs">Voltar</button>
+                            <button onClick={handleProcessFinal} className="bg-[#a7f3d0] hover:bg-[#86efac] text-slate-700 font-black px-20 py-3 rounded-xl shadow-lg transition transform active:scale-95 text-lg uppercase tracking-widest">Processar</button>
+                        </div>
+                    </div>
                 </div>
             </div>
+        </div>
+    );
+};
+
+interface FinalPrintReceiptProps {
+    slip: SalarySlip;
+    company: Company;
+    employee: Employee;
+    months: string[];
+    onClose: () => void;
+}
+
+const FinalPrintReceipt: React.FC<FinalPrintReceiptProps> = ({ slip, company, employee, months, onClose }) => {
+    const f = (v: number) => formatCurrency(v).replace('Kz', '').trim();
+
+    const renderReceiptPart = (label: string) => (
+        <div className="flex-1 p-8 font-sans text-slate-900 text-[9px] leading-tight">
+            <div className="text-center mb-6">
+                <p className="font-bold text-xs uppercase">{company.name}</p>
+                <p className="font-bold">NIF: {company.nif}</p>
+            </div>
+            
+            <div className="flex justify-between items-end mb-4 border-b-2 border-slate-800 pb-2">
+                <div className="space-y-0.5">
+                    <p className="font-bold flex gap-2"><span className="text-slate-400">2</span> <span className="uppercase text-sm font-black">{employee.name}</span></p>
+                    <p className="font-bold">Profissão: {employee.role}</p>
+                    <p className="text-slate-500 font-medium italic">[ Admitido em {formatDate(employee.admissionDate)} ]</p>
+                </div>
+                <div className="text-right">
+                    <p className="font-black text-slate-400 uppercase text-[8px] tracking-widest">{label}</p>
+                    <p className="font-black uppercase text-xs">RECIBO DE VENCIMENTO</p>
+                    <p className="font-bold">{months[slip.month - 1]} de {slip.year}</p>
+                    <p className="font-bold">NIF Nº: {employee.nif}</p>
+                    <p className="font-bold">INSS Nº: {employee.ssn || '00000'}</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-[40px_1fr_60px_100px] font-black border-b border-slate-300 pb-1 uppercase text-[8px]">
+                <span>COD</span>
+                <span>Descrição</span>
+                <span className="text-center">QTD</span>
+                <span className="text-right">VALOR</span>
+            </div>
+
+            <div className="space-y-1.5 py-4 min-h-[350px]">
+                <div className="grid grid-cols-[40px_1fr_60px_100px] items-center">
+                    <span className="text-slate-400">01</span>
+                    <span className="font-bold uppercase">Vencimento Base para a Categoria Profissional</span>
+                    <span className="text-center font-bold">31</span>
+                    <span className="text-right font-bold">{f(slip.baseSalary)}</span>
+                </div>
+                <div className="grid grid-cols-[40px_1fr_60px_100px] items-center">
+                    <span className="text-slate-400">02</span>
+                    <span className="font-bold uppercase">Complemento Salarial</span>
+                    <span className="text-center font-bold">27</span>
+                    <span className="text-right font-bold">{f(slip.allowances)}</span>
+                </div>
+                {slip.absences > 0 && (
+                    <div className="grid grid-cols-[40px_1fr_60px_100px] items-center text-red-600">
+                        <span className="text-slate-300">04</span>
+                        <span className="font-bold uppercase italic">Abatimento de Faltas Admissão(4d) (Total Horas=20Hrs)</span>
+                        <span className="text-center font-bold">4</span>
+                        <span className="text-right font-bold">- 10.489,51</span>
+                    </div>
+                )}
+                <div className="grid grid-cols-[40px_1fr_60px_100px] items-center border-t border-slate-300 pt-1 font-bold">
+                    <span className="text-slate-400">07</span>
+                    <span className="uppercase">[01+02-03+04+05-06] Total de Vencimento</span>
+                    <span className=""></span>
+                    <span className="text-right">{f(slip.baseSalary + slip.allowances)}</span>
+                </div>
+
+                <div className="pt-4 space-y-1">
+                    <p className="font-black text-slate-400 uppercase italic">Subsidios</p>
+                    <div className="grid grid-cols-[40px_1fr_60px_100px] items-center">
+                        <span className="text-slate-400">08</span>
+                        <span className="font-bold uppercase">Subsidio de Férias</span>
+                        <span className="text-center font-bold">Vg</span>
+                        <span className="text-right font-bold">{f(slip.subsidyVacation)}</span>
+                    </div>
+                    <div className="grid grid-cols-[40px_1fr_60px_100px] items-center">
+                        <span className="text-slate-400">09</span>
+                        <span className="font-bold uppercase">Subsidio de Natal</span>
+                        <span className="text-center font-bold">Vg</span>
+                        <span className="text-right font-bold">{f(slip.subsidyChristmas)}</span>
+                    </div>
+                    <div className="grid grid-cols-[40px_1fr_60px_100px] items-center">
+                        <span className="text-slate-400">10</span>
+                        <span className="font-bold uppercase">Abono de Familia</span>
+                        <span className="text-center font-bold">Vg</span>
+                        <span className="text-right font-bold">{f(slip.subsidyFamily)}</span>
+                    </div>
+                    <div className="grid grid-cols-[40px_1fr_60px_100px] items-center">
+                        <span className="text-slate-400">13</span>
+                        <span className="font-bold uppercase">Subsidio de Alojamento</span>
+                        <span className="text-center font-bold">Vg</span>
+                        <span className="text-right font-bold">{f(slip.subsidyHousing)}</span>
+                    </div>
+                    <div className="grid grid-cols-[40px_1fr_60px_100px] items-center border-t border-slate-200 pt-1 font-bold">
+                        <span className="text-slate-400">15</span>
+                        <span className="uppercase">[08+09+10+11+12+13+14] Total de Subsidios</span>
+                        <span className=""></span>
+                        <span className="text-right">{f(slip.subsidies)}</span>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-[40px_1fr_60px_100px] items-center border-t-2 border-slate-800 pt-1 font-black text-slate-800 mt-4">
+                    <span className="">18</span>
+                    <span className="uppercase">[07+15+16-17] Total de Vencimento Antes de Impostos</span>
+                    <span className=""></span>
+                    <span className="text-right">{f(slip.grossTotal)}</span>
+                </div>
+
+                <div className="pt-4 space-y-1">
+                    <p className="font-black text-slate-400 uppercase italic">Impostos</p>
+                    <div className="grid grid-cols-[40px_1fr_60px_100px] items-center">
+                        <span className="text-slate-400">19</span>
+                        <span className="font-bold uppercase">Segurança Social do Trabalhador [18-08]x3%</span>
+                        <span className="text-center font-bold"></span>
+                        <span className="text-right font-bold">{f(slip.inss)}</span>
+                    </div>
+                    <div className="grid grid-cols-[40px_1fr_60px_100px] items-center">
+                        <span className="text-slate-400">20</span>
+                        <span className="font-bold uppercase">IRT [07+[11]>30.000+[12]>30.000+[13]50%+10+16-17-19]</span>
+                        <span className="text-center font-bold"></span>
+                        <span className="text-right font-bold">{f(slip.irt)}</span>
+                    </div>
+                    <div className="grid grid-cols-[40px_1fr_60px_100px] items-center border-t border-slate-300 pt-1 font-bold">
+                        <span className="text-slate-400">21</span>
+                        <span className="uppercase">Vencimento liquido depois de impostos [18-19-20]</span>
+                        <span className=""></span>
+                        <span className="text-right">{f(slip.netTotal)}</span>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-[40px_1fr_60px_100px] items-center font-black text-slate-900 mt-6 border-t border-slate-300 pt-2">
+                    <span className="">22</span>
+                    <span className="uppercase">VENCIMENTO LIQUIDO</span>
+                    <span className=""></span>
+                    <span className="text-right">{f(slip.netTotal)}</span>
+                </div>
+            </div>
+
+            <div className="mt-auto pt-8 border-t-2 border-slate-800">
+                <div className="grid grid-cols-[40px_1fr_100px] items-center font-black text-[11px] uppercase">
+                    <span>24</span>
+                    <span>TOTAL A RECEBER [22-23]</span>
+                    <span className="text-right">{f(slip.netTotal)}</span>
+                </div>
+                
+                <div className="mt-20 flex justify-between items-end">
+                    <div className="w-64 border-b border-slate-800 pb-1">
+                        <span className="font-bold">Recebi:</span>
+                    </div>
+                    <div className="text-[7px] font-bold text-slate-400 flex items-center gap-1">
+                         <div className="w-2 h-2 bg-slate-400"></div> Powered by Afrogest™
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    return (
+        <div className="fixed inset-0 z-[140] bg-slate-100 flex flex-col items-center animate-in fade-in overflow-y-auto">
+            <div className="w-full bg-slate-900 text-white p-4 flex justify-between items-center sticky top-0 z-[150] print:hidden">
+                <h2 className="font-black uppercase tracking-widest text-sm flex items-center gap-2">
+                    <Printer size={18} className="text-blue-400"/> Pré-visualização de Recibo A4
+                </h2>
+                <div className="flex gap-2">
+                    <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2 rounded-xl font-black uppercase text-xs shadow-lg transition transform active:scale-95">Imprimir</button>
+                    <button onClick={onClose} className="bg-slate-700 hover:bg-slate-600 text-white px-8 py-2 rounded-xl font-black uppercase text-xs transition">Fechar</button>
+                </div>
+            </div>
+
+            <div className="w-[210mm] min-h-[297mm] bg-white shadow-2xl flex flex-row divide-x-2 divide-dashed divide-slate-400 print:shadow-none print:w-full print:divide-slate-300" id="receipt-print-area">
+                {renderReceiptPart('ORIGINAL')}
+                {renderReceiptPart('DUPLICADO')}
+            </div>
+
+            <style>{`
+                @media print {
+                    body * { visibility: hidden; }
+                    #receipt-print-area, #receipt-print-area * { visibility: visible; }
+                    #receipt-print-area {
+                        position: absolute;
+                        left: 0;
+                        top: 0;
+                        width: 100%;
+                        height: 100%;
+                    }
+                    @page { size: A4 landscape; margin: 0; }
+                }
+            `}</style>
         </div>
     );
 };
@@ -326,6 +557,7 @@ interface HumanResourcesProps {
   onSaveAttendance: (a: AttendanceRecord) => void;
   company: Company;
   currentView?: ViewState;
+  cashRegisters?: CashRegister[];
 }
 
 const HumanResources: React.FC<HumanResourcesProps> = ({ 
@@ -333,7 +565,7 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
     vacations, onSaveVacation, payroll, onProcessPayroll, onClearPayroll,
     professions, onSaveProfession, onDeleteProfession,
     contracts, onSaveContract, attendance, onSaveAttendance,
-    company, currentView
+    company, currentView, cashRegisters = []
 }) => {
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'GESTÃO' | 'ASSIDUIDADE' | 'PROFISSÕES' | 'MAPAS' | 'ORDEM_TRANSFERENCIA' | 'EFETIVIDADE_MAP' | 'VENCIMENTO_LIST'>(() => {
     if (currentView === 'HR_TRANSFER_ORDER') return 'ORDEM_TRANSFERENCIA';
@@ -348,7 +580,13 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
   const [isProcessingEffectiveness, setIsProcessingEffectiveness] = useState(false);
   const [activeProcessingEmp, setActiveProcessingEmp] = useState<Employee | null>(null);
   const [showSalaryReceipt, setShowSalaryReceipt] = useState(false);
+  const [showFinalReceipt, setShowFinalReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState<any>(null);
+  const [finalSlipToPrint, setFinalSlipToPrint] = useState<SalarySlip | null>(null);
+
+  // Transfer State
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [selectedCashId, setSelectedCashId] = useState('');
 
   const months = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -374,13 +612,97 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
             setShowSalaryReceipt(true);
         }
     } else if (val === 'PRINT_RECIBOS') {
-        window.print();
+        if (selectedEmpIds.size !== 1) return alert("Selecione 1 funcionário para imprimir.");
+        const empId = Array.from(selectedEmpIds)[0];
+        const slip = getProcessedSlip(empId);
+        if (slip) {
+            setFinalSlipToPrint(slip);
+            setShowFinalReceipt(true);
+        } else {
+            alert("Salário não processado para este funcionário.");
+        }
     } else if (val === 'DELETE_SALARIO') {
         if (selectedEmpIds.size === 0) return alert("Selecione funcionários para apagar salários.");
         if (confirm("Deseja apagar os processamentos salariais selecionados?")) {
             selectedEmpIds.forEach(id => onClearPayroll?.(id, processingMonth, processingYear));
             alert("Salários removidos.");
         }
+    }
+  };
+
+  const handleTransfer = () => {
+    if (selectedEmpIds.size === 0) return alert("Selecione os funcionários para a transferência.");
+    setShowTransferModal(true);
+  };
+
+  const executeTransfer = async () => {
+    if (!selectedCashId) return alert("Selecione o caixa de saída.");
+    
+    // Processar automaticamente os salários dos funcionários selecionados que ainda não foram processados
+    const newSlips: SalarySlip[] = [];
+    // Fix: Replaced Set.forEach with for...of loop to ensure correct type inference for empId as a string
+    for (const empId of selectedEmpIds) {
+        const emp = employees.find(e => e.id === empId);
+        const existing = getProcessedSlip(empId);
+        if (emp && !existing) {
+            const inss = calculateINSS(emp.baseSalary + (emp.complementSalary || 0));
+            const gross = emp.baseSalary + (emp.complementSalary || 0) + emp.subsidyFood + emp.subsidyTransport;
+            const irt = calculateIRT(gross, inss);
+            const net = gross - inss - irt;
+
+            newSlips.push({
+                employeeId: emp.id,
+                employeeName: emp.name,
+                employeeRole: emp.role,
+                baseSalary: emp.baseSalary,
+                allowances: emp.complementSalary || 0,
+                bonuses: 0,
+                subsidies: emp.subsidyFood + emp.subsidyTransport,
+                subsidyFood: emp.subsidyFood,
+                subsidyTransport: emp.subsidyTransport,
+                subsidyFamily: emp.subsidyFamily,
+                subsidyHousing: emp.subsidyHousing,
+                absences: 0,
+                advances: 0,
+                grossTotal: gross,
+                inss: inss,
+                irt: irt,
+                netTotal: net,
+                month: processingMonth,
+                year: processingYear,
+                isProcessed: true
+            });
+        }
+    }
+
+    if (newSlips.length > 0) {
+        onProcessPayroll(newSlips);
+    }
+
+    // Registro no Caixa (Movimento de Saída)
+    // Fix: Explicitly type reduce parameters to ensure correct inference from Set elements
+    const totalNetToPay = Array.from(selectedEmpIds).reduce((acc: number, id: string) => {
+        const slip = payroll.find(p => p.employeeId === id && p.month === processingMonth && p.year === processingYear) 
+                    || newSlips.find(p => p.employeeId === id);
+        return acc + (slip?.netTotal || 0);
+    }, 0);
+
+    try {
+        const { error } = await supabase.from('movimentos_caixa').insert({
+            caixa_id: selectedCashId,
+            tipo: 'EXIT',
+            valor: totalNetToPay,
+            descricao: `Pagamento de Salários - ${months[processingMonth-1]} ${processingYear}`,
+            operador_nome: 'Admin',
+            origem: 'HR',
+            empresa_id: company.id
+        });
+        if (error) throw error;
+        alert("Transferência efetuada e salários processados!");
+        setShowTransferModal(false);
+        setSelectedEmpIds(new Set());
+    } catch (e: any) {
+        alert("Erro ao registrar no caixa: " + e.message);
     }
   };
 
@@ -406,7 +728,8 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
                         baseSalary: activeProcessingEmp.baseSalary, 
                         hoursAbsence: Object.values(data).filter(v => v === 'injust').length,
                         subsAlimManual: s.alim,
-                        subsTransManual: s.trans
+                        subsTransManual: s.trans,
+                        attendanceDetails: data
                     });
                     setShowSalaryReceipt(true);
                 }}
@@ -425,8 +748,18 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
             />
         )}
 
+        {showFinalReceipt && finalSlipToPrint && (
+            <FinalPrintReceipt 
+                slip={finalSlipToPrint}
+                company={company}
+                employee={employees.find(e => e.id === finalSlipToPrint.employeeId)!}
+                months={months}
+                onClose={() => { setShowFinalReceipt(false); setFinalSlipToPrint(null); }}
+            />
+        )}
+
         <div className="bg-white border-2 border-slate-300 shadow-2xl rounded-none overflow-hidden min-w-[1600px]">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse text-[10px] theme-red">
                 <thead className="bg-white text-slate-700 font-bold text-[9px] uppercase tracking-tighter text-center">
                     <tr className="border-b-2 border-slate-400">
                         <th className="p-2 border-r w-10 text-center">
@@ -512,14 +845,14 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
                                 </td>
                                 <td className="p-2 border-r text-center font-black text-slate-400">.</td>
                                 <td className="p-2 border-r text-center">
-                                    <input type="checkbox" checked={!!slip} className="w-4 h-4 rounded accent-emerald-600"/>
+                                    <input type="checkbox" checked={!!slip} readOnly className="w-4 h-4 rounded accent-emerald-600"/>
                                 </td>
                                 <td className="p-2 text-center">
                                     <button 
                                         onClick={() => {
                                             if (slip) {
-                                                setReceiptData({ emp, month: processingMonth, year: processingYear, ...slip });
-                                                setShowSalaryReceipt(true);
+                                                setFinalSlipToPrint(slip);
+                                                setShowFinalReceipt(true);
                                             }
                                         }} 
                                         disabled={!slip}
@@ -542,8 +875,8 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
             <div>
                 <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Users className="text-blue-600"/> Recursos Humanos & Processamento</h1>
-                <div className="mt-2 space-y-2">
-                    <p className="text-xs text-slate-500 uppercase font-bold tracking-widest">Conformidade Legal AGT/MAPTSS</p>
+                <div className="mt-2 flex flex-wrap gap-4">
+                    <p className="text-xs text-slate-500 uppercase font-bold tracking-widest self-center">Conformidade Legal AGT/MAPTSS</p>
                     <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm w-fit">
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Selecionar Ação:</span>
                         <select 
@@ -555,10 +888,16 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
                             <option value="PROCESS_EFECTIVIDADE">Processar Efetividade</option>
                             <option value="DELETE_EFECTIVIDADE">Apagar Efetividade</option>
                             <option value="PROCESS_SALARIO">Processar Salário</option>
-                            <option value="PRINT_RECIBOS">Imprimir Recibos de Salário</option>
+                            <option value="PRINT_RECIBOS">Imprimir Recibos Salários</option>
                             <option value="DELETE_SALARIO">Apagar Salário</option>
                         </select>
                     </div>
+                    <button 
+                        onClick={handleTransfer}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg transition flex items-center gap-2"
+                    >
+                        <ArrowRight size={14}/> Transferir
+                    </button>
                 </div>
             </div>
             <div className="flex gap-2 bg-white p-1 rounded-lg border shadow-sm overflow-x-auto w-full md:w-auto custom-scrollbar">
@@ -590,6 +929,43 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
         {activeTab === 'MAPAS' && <SalaryMap payroll={payroll} employees={employees} />}
         {activeTab === 'PROFISSÕES' && <ProfessionManager professions={professions} onSave={onSaveProfession} onDelete={onDeleteProfession}/>}
         {activeTab === 'DASHBOARD' && <div className="p-20 text-center text-slate-300 font-black uppercase tracking-[10px] opacity-30 italic text-xl">Imatec RH Cloud System</div>}
+
+        {/* Modal de Transferência */}
+        {showTransferModal && (
+            <div className="fixed inset-0 z-[150] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+                <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
+                    <div className="bg-slate-900 text-white p-6 flex justify-between items-center">
+                        <h3 className="font-black text-lg uppercase tracking-widest flex items-center gap-2"><DollarSign className="text-emerald-400"/> Transferência Bancária</h3>
+                        <button onClick={() => setShowTransferModal(false)} className="hover:bg-red-600 p-1 rounded-full transition"><X size={20}/></button>
+                    </div>
+                    <div className="p-8 space-y-6">
+                        <div>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2">Selecionar Caixa de Saída</label>
+                            <select 
+                                className="w-full p-4 border-2 border-slate-100 rounded-2xl font-black text-slate-700 bg-slate-50 focus:border-blue-600 outline-none transition-all"
+                                value={selectedCashId}
+                                onChange={e => setSelectedCashId(e.target.value)}
+                            >
+                                <option value="">Selecione o Caixa...</option>
+                                {cashRegisters.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name} ({formatCurrency(c.balance)})</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="bg-blue-50 p-4 rounded-2xl border-2 border-blue-100 text-[10px] text-blue-800 font-bold uppercase tracking-widest leading-relaxed">
+                            <Info className="inline-block mr-2" size={14}/>
+                            Ao confirmar, o sistema irá processar automaticamente o vencimento dos {selectedEmpIds.size} funcionários selecionados e registrar a saída no caixa.
+                        </div>
+                        <button 
+                            onClick={executeTransfer}
+                            className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black uppercase text-xs tracking-[3px] shadow-xl shadow-emerald-200 transition transform active:scale-95"
+                        >
+                            Confirmar Pagamento
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
   );
 };
