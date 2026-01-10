@@ -207,7 +207,7 @@ const App = () => {
           });
       }
 
-      const results = await Promise.allSettled([
+      await Promise.allSettled([
           fetchInvoicesCloud(),
           fetchPurchasesCloud(),
           fetchCashRegistersCloud(),
@@ -223,7 +223,8 @@ const App = () => {
           fetchBanksCloud(),
           fetchMetricsCloud(),
           fetchUsersCloud(),
-          fetchInternalProfessionsCloud()
+          fetchInternalProfessionsCloud(),
+          fetchHrEmployeesCloud()
       ]);
 
     } catch (err: any) {
@@ -232,6 +233,88 @@ const App = () => {
         setCloudError(`Erro de conexão com a base de dados: ${detailedMessage}`);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchHrEmployeesCloud = async () => {
+    try {
+      const { data, error } = await supabase.from('funcionarios').select('*').order('nome', { ascending: true });
+      if (error) throw error;
+      if (data) {
+        setHrEmployees(data.map(e => ({
+          id: e.id,
+          idnf: e.idnf,
+          employeeNumber: e.numero_funcionario,
+          name: e.nome,
+          nif: e.nif,
+          biNumber: e.bi,
+          ssn: e.num_inss,
+          role: e.cargo,
+          department: e.departamento,
+          baseSalary: Number(e.salario_base || 0),
+          status: e.status || 'Active',
+          admissionDate: e.data_admissao,
+          contractType: e.tipo_contrato || 'Determinado',
+          subsidyTransport: Number(e.subs_transporte || 0),
+          subsidyFood: Number(e.subs_alimentacao || 0),
+          subsidyFamily: Number(e.subs_familia || 0),
+          gender: e.genero || 'M',
+          maritalStatus: e.estado_civil || 'Solteiro',
+          address: e.morada || '',
+          municipality: e.municipio || '',
+          neighborhood: e.bairro || '',
+          photoUrl: e.foto_url,
+          workLocationId: e.local_trabalho_id,
+          companyId: e.empresa_id,
+          isCashier: e.is_caixa,
+          isMagic: e.is_magic
+        })));
+      }
+    } catch (e) { console.error("Erro ao carregar funcionários:", e); }
+  };
+
+  const handleSaveEmployee = async (emp: Employee) => {
+    setIsLoading(true);
+    try {
+        const companyIdToUse = await getSecureEmpresaId();
+        const payload = {
+            id: ensureUUID(emp.id) || undefined,
+            nome: emp.name,
+            nif: emp.nif,
+            bi: emp.biNumber,
+            num_inss: emp.ssn,
+            cargo: emp.role,
+            departamento: emp.department,
+            salario_base: emp.baseSalary,
+            status: emp.status,
+            data_admissao: emp.admissionDate,
+            tipo_contrato: emp.contractType,
+            subs_transporte: emp.subsidyTransport,
+            subs_alimentacao: emp.subsidyFood,
+            subs_familia: emp.subsidyFamily,
+            genero: emp.gender,
+            estado_civil: emp.maritalStatus,
+            morada: emp.address,
+            municipio: emp.municipality,
+            bairro: emp.neighborhood,
+            foto_url: emp.photoUrl,
+            idnf: emp.idnf,
+            is_caixa: emp.isCashier,
+            is_magic: emp.isMagic,
+            local_trabalho_id: ensureUUID(emp.workLocationId),
+            empresa_id: companyIdToUse
+        };
+
+        const { error } = await supabase.from('funcionarios').upsert(payload);
+        if (error) throw error;
+        
+        await fetchHrEmployeesCloud();
+        alert("Funcionário sincronizado com a Cloud!");
+    } catch (err: any) {
+        console.error("Erro ao salvar funcionário:", err);
+        alert("Erro ao salvar na Cloud: " + (err.message || "Verifique sua internet."));
+    } finally {
+        setIsLoading(false);
     }
   };
 
@@ -1186,14 +1269,14 @@ const App = () => {
       case 'ACCOUNTING_OPENING_BALANCE': return <OpeningBalanceMap accounts={pgcAccounts} savedBalances={openingBalances} onSaveBalances={setOpeningBalances} onBack={() => setCurrentView('ACCOUNTING_MAPS')} onViewAccount={(code) => { setSelectedExtractAccount(code); setCurrentView('ACCOUNTING_ACCOUNT_EXTRACT'); }} />;
       case 'ACCOUNTING_ACCOUNT_EXTRACT': return <AccountExtract company={currentCompany} accountCode={selectedExtractAccount || '31'} year={globalYear} pgcAccounts={pgcAccounts} openingBalances={openingBalances} invoices={certifiedInvoices} onBack={() => setCurrentView('ACCOUNTING_MAPS')} onUpdateAccountCode={(o, n) => setSelectedExtractAccount(n)} onUpdateBalance={b => setOpeningBalances(openingBalances.map(x => x.id === b.id ? b : x))} />;
       case 'ACCOUNTING_REGULARIZATION': return <RegularizationMap invoices={invoices} onViewInvoice={(inv) => { setInvoiceInitialData(inv); setCurrentView('CREATE_INVOICE'); }} />;
-      case 'HR_EMPLOYEES': return <Employees employees={hrEmployees} onSaveEmployee={e => setHrEmployees(prev => [...prev.filter(x => x.id !== e.id), e])} workLocations={workLocations} professions={professions} onIssueContract={i => { setSelectedHrEmployee(i); setCurrentView('HR_CONTRACT_ISSUE'); }} />;
+      case 'HR_EMPLOYEES': return <Employees employees={hrEmployees} onSaveEmployee={handleSaveEmployee} workLocations={workLocations} professions={professions} onIssueContract={i => { setSelectedHrEmployee(i); setCurrentView('HR_CONTRACT_ISSUE'); }} />;
       case 'HR_EFFECTIVENESS_MAP': return <EffectivenessMap employees={hrEmployees} company={currentCompany} year={globalYear} month={new Date().getMonth() + 1} />;
       case 'HR_SALARY_LIST': return <SalaryListReport employees={hrEmployees} payroll={payrollHistory} year={globalYear} />;
       case 'HR_TRANSFER_ORDER':
       case 'HR':
           return <HumanResources 
                     employees={hrEmployees}
-                    onSaveEmployee={(e) => setHrEmployees(prev => prev.map(emp => emp.id === e.id ? e : emp).concat(prev.find(emp => emp.id === e.id) ? [] : [e]))}
+                    onSaveEmployee={handleSaveEmployee}
                     transactions={hrTransactions}
                     onSaveTransaction={t => setHrTransactions([...hrTransactions, t])}
                     vacations={hrVacations}
