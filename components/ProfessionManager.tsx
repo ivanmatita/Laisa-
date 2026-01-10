@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Profession } from '../types';
-import { Search, Plus, Trash2, Edit2, Briefcase, Save, X, BookOpen, Check, ArrowLeft, Loader2, ChevronRight, Calculator, Info } from 'lucide-react';
-// Fix: Imported formatCurrency from ../utils to resolve missing name error
+import { Search, PlusCircle, Trash2, Edit2, Briefcase, Save, X, BookOpen, Check } from 'lucide-react';
 import { generateId, formatCurrency } from '../utils';
 
 interface ProfessionManagerProps {
@@ -81,9 +80,9 @@ const ProfessionManager: React.FC<ProfessionManagerProps> = ({ professions, onSa
                     </div>
                     <button 
                         onClick={handleCreate}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-10 py-3 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition transform active:scale-95 flex items-center gap-2"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-10 py-3 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all transform active:scale-95 flex items-center gap-2 border-b-4 border-blue-800"
                     >
-                        <Plus size={20}/> Criar Profissão Interna
+                        <PlusCircle size={20}/> CRIAR PROFISSÃO INTERNA
                     </button>
                 </div>
 
@@ -141,7 +140,7 @@ const ProfessionManager: React.FC<ProfessionManagerProps> = ({ professions, onSa
                     <div className="bg-slate-900 text-white p-8 flex justify-between items-center border-b-8 border-blue-600">
                         <div className="flex items-center gap-4">
                             <div className="p-3 bg-blue-600 rounded-2xl shadow-xl"><BookOpen size={24}/></div>
-                            <h3 className="font-black text-xl uppercase tracking-tighter">{formData.id ? 'Editar Profissão Interna' : 'Nova Profissão Interna'}</h3>
+                            <h3 className="font-black text-xl uppercase tracking-tighter">{formData.id ? 'Editar Profissão' : 'Nova Profissão'}</h3>
                         </div>
                         <button onClick={() => setView('LIST')} className="p-2 hover:bg-red-600 rounded-full transition border border-white/10 shadow-lg"><X size={24}/></button>
                     </div>
@@ -157,7 +156,7 @@ const ProfessionManager: React.FC<ProfessionManagerProps> = ({ professions, onSa
                             />
                         </div>
                         <div>
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2 ml-1">Nome Profissional Interno *</label>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-2 ml-1">Nome Profissional *</label>
                             <input 
                                 className="w-full border-2 border-slate-100 bg-white p-4 rounded-2xl font-black uppercase text-slate-900 outline-none focus:border-blue-600 transition shadow-inner"
                                 placeholder="Ex: Operador de Máquina Senior"
@@ -185,13 +184,6 @@ const ProfessionManager: React.FC<ProfessionManagerProps> = ({ professions, onSa
                                     onChange={e => setFormData({...formData, complement: Number(e.target.value)})}
                                 />
                             </div>
-                        </div>
-
-                        <div className="bg-blue-50 p-6 rounded-3xl border-2 border-blue-100 flex items-start gap-4">
-                            <Info className="text-blue-600 mt-1" size={24}/>
-                            <p className="text-[11px] text-blue-700 leading-relaxed font-bold uppercase">
-                                Esta profissão será vinculada automaticamente aos funcionários no momento da admissão, definindo os valores padrão da folha salarial.
-                            </p>
                         </div>
 
                         <div className="flex gap-4 pt-4">

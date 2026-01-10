@@ -1,4 +1,5 @@
 
+
 export enum InvoiceStatus {
   DRAFT = 'Rascunho',
   PENDING = 'Pendente',
@@ -124,6 +125,8 @@ export type ViewState =
   | 'ACCOUNTING_ACCOUNT_EXTRACT'
   | 'HR_GROUP'
   | 'HR'
+  | 'HR_EFFECTIVENESS_MAP'
+  | 'HR_SALARY_LIST'
   | 'HR_EMPLOYEES'
   | 'HR_PERFORMANCE'
   | 'HR_CONTRACT_ISSUE'
@@ -341,12 +344,17 @@ export interface SalarySlip {
   inss: number;
   irt: number;
   netTotal: number;
+  month: number;
+  year: number;
+  isProcessed: boolean;
   attendanceDetails?: {
     folgas: number;
     servicos: number;
     faltasJust: number;
     faltasInjust: number;
     ferias: number;
+    subTransporteManual?: number;
+    subAlimentacaoManual?: number;
   };
 }
 
@@ -469,6 +477,7 @@ export interface Invoice {
   cancellationReason?: string;
   integrationStatus?: IntegrationStatus;
   processedAt?: string;
+  /* Fix: Removed duplicate identifier 'targetWarehouseId' */
   targetWarehouseId?: string;
   deliveryAddress?: string;
 }
@@ -801,14 +810,7 @@ export interface SchoolGrade {
   finalGrade: number;
 }
 
-export interface SchoolAttendance {
-  id: string;
-  studentId: string;
-  classId: string;
-  date: string;
-  status: 'PRESENT' | 'ABSENT' | 'LATE';
-}
-
+/* Fix: Removed duplicate 'SchoolAttendance' interface */
 export interface SchoolAttendance {
   id: string;
   studentId: string;

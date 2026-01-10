@@ -136,6 +136,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isOpen, se
       children: [
         { id: 'HR_EMPLOYEES', label: 'Funcionários' },
         { id: 'HR', label: 'Gestão Geral' },
+        { id: 'HR_EFFECTIVENESS_MAP', label: 'Mapa de Efetividade' },
+        { id: 'HR_SALARY_LIST', label: 'Listagem por Vencimento' },
         { id: 'HR_PERFORMANCE', label: 'Análise de Desempenho', icon: BarChart3 },
         { id: 'HR_TRANSFER_ORDER', label: 'ORDEM TRANSFERÊNCIA' }
       ]
@@ -205,7 +207,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, isOpen, se
         {/* Toggle Button Desktop */}
         <button 
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="hidden lg:flex absolute -right-3 top-24 bg-blue-600 text-white rounded-full p-1 shadow-lg z-40 border-2 border-slate-900 hover:bg-blue-500 transition-colors"
+          className="hidden lg:flex absolute -right-3 top-24 bg-blue-600 text-white rounded-full p-1 shadow-lg z-40 border-2 border-slate-900 hover:bg-blue-50 transition-colors"
         >
           {isCollapsed ? <ChevronRight size={14}/> : <ChevronLeft size={14}/>}
         </button>

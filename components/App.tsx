@@ -16,7 +16,7 @@ import RegularizationMap from './RegularizationMap';
 import Model7 from './Model7';
 import CashManager from './CashManager'; 
 import HumanResources from './HumanResources'; 
-import Employees from './Employees'; 
+import Employees from './Employees';
 import Workspace from './Workspace';
 import ProjectReport from './ProjectReport';
 import SaftExport from './SaftExport';
@@ -46,6 +46,9 @@ import HotelManagement from './HotelManagement';
 import ArchivesManager from './ArchivesManager';
 import TaxDocsManager from './TaxDocsManager';
 import GeneralMovements from './GeneralMovements';
+import EffectivenessMap from './EffectivenessMap';
+import SalaryListReport from './SalaryListReport';
+import TaxTable from './TaxTable';
 
 import { supabase } from '../services/supabaseClient';
 
@@ -62,9 +65,17 @@ import { generateId, generateInvoiceHash, getDocumentPrefix, formatDate } from '
 
 const DEFAULT_FALLBACK_COMPANY_ID = '00000000-0000-0000-0000-000000000001';
 const INITIAL_COMPANY: Company = {
-  id: DEFAULT_FALLBACK_COMPANY_ID, name: 'C & V - COMERCIO GERAL E PRESTAÇAO DE SERVIÇOS, LDA', nif: '5000780316', 
-  address: 'Luanda, Angola', email: 'geral@empresa.ao', phone: '+244 923 000 000', regime: 'Regime Geral',
-  licensePlan: 'ENTERPRISE', status: 'ACTIVE', validUntil: '2025-12-31', registrationDate: '2024-01-01'
+  id: DEFAULT_FALLBACK_COMPANY_ID, 
+  name: 'IVAN JOSÉ LUCAS MATITA', 
+  nif: '004972225NE040', 
+  address: 'Luanda, Angola', 
+  email: 'geral@imatec.ao', 
+  phone: '+244 923 000 000', 
+  regime: 'Regime Geral',
+  licensePlan: 'ENTERPRISE', 
+  status: 'ACTIVE', 
+  validUntil: '2025-12-31', 
+  registrationDate: '2024-01-01'
 };
 
 const MOCK_USERS: User[] = [
@@ -167,7 +178,10 @@ const App = () => {
     setCloudError(null);
     try {
       const { data: companies, error: compError } = await supabase.from('empresas').select('*').limit(1);
-      if (compError) throw compError;
+      
+      if (compError) {
+          throw new Error(`Erro na tabela empresas: ${compError.message} (Código: ${compError.code})`);
+      }
 
       if (companies && companies.length > 0) {
           const comp = companies[0];
@@ -193,7 +207,7 @@ const App = () => {
           });
       }
 
-      await Promise.allSettled([
+      const results = await Promise.allSettled([
           fetchInvoicesCloud(),
           fetchPurchasesCloud(),
           fetchCashRegistersCloud(),
@@ -211,9 +225,11 @@ const App = () => {
           fetchUsersCloud(),
           fetchInternalProfessionsCloud()
       ]);
+
     } catch (err: any) {
         console.error("Erro crítico ao inicializar Cloud:", err);
-        setCloudError(`Erro de conexão: ${err.message || 'Verifique sua ligação.'}`);
+        const detailedMessage = err.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+        setCloudError(`Erro de conexão com a base de dados: ${detailedMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -221,7 +237,8 @@ const App = () => {
 
   const fetchInternalProfessionsCloud = async () => {
       try {
-          const { data } = await supabase.from('profissoes_internas').select('*');
+          const { data, error } = await supabase.from('profissoes_internas').select('*');
+          if (error) throw error;
           if (data) {
               setProfessions(data.map(p => ({
                   id: p.id,
@@ -241,7 +258,8 @@ const App = () => {
 
   const fetchUsersCloud = async () => {
     try {
-        const { data } = await supabase.from('utilizadores').select('id, nome, utilizador, email, telefone, validade_acesso, permissoes, empresa_id, created_at');
+        const { data, error } = await supabase.from('utilizadores').select('id, nome, utilizador, email, telefone, validade_acesso, permissoes, empresa_id, created_at');
+        if (error) throw error;
         if (data) {
             setUsers(data.map(u => ({
                 id: u.id,
@@ -340,7 +358,8 @@ const App = () => {
 
   const fetchClientsCloud = async () => {
       try {
-          const { data } = await supabase.from('clientes').select('*');
+          const { data, error } = await supabase.from('clientes').select('*');
+          if (error) throw error;
           if (data) {
               setClients(data.map(c => ({
                   id: c.id, name: c.nome, vatNumber: c.nif, email: c.email || '',
@@ -354,7 +373,8 @@ const App = () => {
 
   const fetchSuppliersCloud = async () => {
       try {
-          const { data } = await supabase.from('fornecedores').select('*');
+          const { data, error } = await supabase.from('fornecedores').select('*');
+          if (error) throw error;
           if (data) {
               setSuppliers(data.map(s => ({
                   id: s.id, name: s.nome, vatNumber: s.contribuinte, email: s.email || '',
@@ -367,7 +387,8 @@ const App = () => {
 
   const fetchWarehousesCloud = async () => {
     try {
-        const { data } = await supabase.from('armazens').select('*');
+        const { data, error } = await supabase.from('armazens').select('*');
+        if (error) throw error;
         if (data) {
             setWarehouses(data.map(a => ({
                 id: a.id,
@@ -376,7 +397,7 @@ const App = () => {
                 description: a.descricao,
                 managerName: a.responsavel,
                 contact: a.contacto,
-                observations: a.observations
+                observations: a.observacoes
             })));
         }
     } catch (err) { console.error(err); }
@@ -384,7 +405,8 @@ const App = () => {
 
   const fetchWorkLocationsCloud = async () => {
     try {
-        const { data } = await supabase.from('locais_trabalho').select('*');
+        const { data, error } = await supabase.from('locais_trabalho').select('*');
+        if (error) throw error;
         if (data) {
             setWorkLocations(data.map(d => ({
                 id: d.id,
@@ -398,7 +420,8 @@ const App = () => {
 
   const fetchProductsCloud = async () => {
     try {
-        const { data } = await supabase.from('produtos').select('*');
+        const { data, error } = await supabase.from('produtos').select('*');
+        if (error) throw error;
         if (data) {
             setProducts(data.map(p => ({
                 id: p.id,
@@ -421,6 +444,7 @@ const App = () => {
   const fetchContractsCloud = async () => {
       try {
           const { data, error } = await supabase.from('contratos').select('*').order('created_at', { ascending: false });
+          if (error) throw error;
           if (data) {
               setContracts(data.map(c => ({
                   id: c.id,
@@ -442,6 +466,7 @@ const App = () => {
             .select('*')
             .order('data_fecho', { ascending: false });
           
+          if (error) throw error;
           if (data) {
               setCashClosures(data.map(c => ({
                   id: c.id,
@@ -469,7 +494,8 @@ const App = () => {
 
   const fetchCashRegistersCloud = async () => {
       try {
-          const { data } = await supabase.from('caixas').select('*');
+          const { data, error } = await supabase.from('caixas').select('*');
+          if (error) throw error;
           if (data) {
               setCashRegisters(data.map(c => ({
                   id: c.id,
@@ -1055,6 +1081,22 @@ const App = () => {
       }
   };
 
+  const handleProcessPayroll = (slips: SalarySlip[]) => {
+      setPayrollHistory(prev => {
+          const newHistory = [...prev];
+          slips.forEach(slip => {
+              const existingIdx = newHistory.findIndex(p => p.employeeId === slip.employeeId && p.month === slip.month && p.year === slip.year);
+              if (existingIdx >= 0) newHistory[existingIdx] = slip;
+              else newHistory.push(slip);
+          });
+          return newHistory;
+      });
+  };
+
+  const handleClearPayroll = (empId: string, month: number, year: number) => {
+      setPayrollHistory(prev => prev.filter(p => !(p.employeeId === empId && p.month === month && p.year === year)));
+  };
+
   const renderView = () => {
     if (!currentUser) return <LoginPage onLogin={handleLogin} />;
 
@@ -1145,6 +1187,8 @@ const App = () => {
       case 'ACCOUNTING_ACCOUNT_EXTRACT': return <AccountExtract company={currentCompany} accountCode={selectedExtractAccount || '31'} year={globalYear} pgcAccounts={pgcAccounts} openingBalances={openingBalances} invoices={certifiedInvoices} onBack={() => setCurrentView('ACCOUNTING_MAPS')} onUpdateAccountCode={(o, n) => setSelectedExtractAccount(n)} onUpdateBalance={b => setOpeningBalances(openingBalances.map(x => x.id === b.id ? b : x))} />;
       case 'ACCOUNTING_REGULARIZATION': return <RegularizationMap invoices={invoices} onViewInvoice={(inv) => { setInvoiceInitialData(inv); setCurrentView('CREATE_INVOICE'); }} />;
       case 'HR_EMPLOYEES': return <Employees employees={hrEmployees} onSaveEmployee={e => setHrEmployees(prev => [...prev.filter(x => x.id !== e.id), e])} workLocations={workLocations} professions={professions} onIssueContract={i => { setSelectedHrEmployee(i); setCurrentView('HR_CONTRACT_ISSUE'); }} />;
+      case 'HR_EFFECTIVENESS_MAP': return <EffectivenessMap employees={hrEmployees} company={currentCompany} year={globalYear} month={new Date().getMonth() + 1} />;
+      case 'HR_SALARY_LIST': return <SalaryListReport employees={hrEmployees} payroll={payrollHistory} year={globalYear} />;
       case 'HR_TRANSFER_ORDER':
       case 'HR':
           return <HumanResources 
@@ -1155,7 +1199,8 @@ const App = () => {
                     vacations={hrVacations}
                     onSaveVacation={v => setHrVacations([...hrVacations, v])}
                     payroll={payrollHistory}
-                    onProcessPayroll={p => setPayrollHistory([...payrollHistory, ...p])}
+                    onProcessPayroll={handleProcessPayroll}
+                    onClearPayroll={handleClearPayroll}
                     professions={professions}
                     onSaveProfession={p => setProfessions([...professions, p])}
                     onDeleteProfession={id => setProfessions(professions.filter(x => x.id !== id))}
@@ -1251,7 +1296,7 @@ const App = () => {
              <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1 px-2 border hover:border-slate-300 transition-all shadow-inner">
                  <CalendarIcon size={14} className="text-slate-500"/>
                  <select className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer" value={globalYear} onChange={(e) => setGlobalYear(Number(e.target.value))}>
-                     <option value={2024}>2024</option><option value={2025}>2025</option>
+                     <option value={2024}>2024</option><option value={2025}>2025</option><option value={2026}>2026</option>
                  </select>
              </div>
              <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
@@ -1267,6 +1312,16 @@ const App = () => {
         </header>
 
         <main className="flex-1 overflow-auto p-4 md:p-6 relative">
+           {cloudError && (
+             <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 rounded-2xl flex items-start gap-4 text-red-700 animate-in slide-in-from-top duration-500">
+                <AlertCircle className="shrink-0 mt-0.5" size={24}/>
+                <div>
+                   <h3 className="font-black uppercase text-sm tracking-widest mb-1">Erro de Conexão Cloud</h3>
+                   <p className="text-xs font-bold leading-relaxed">{cloudError}</p>
+                   <button onClick={initAppCloud} className="mt-3 px-6 py-1.5 bg-red-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-red-700 transition shadow-lg">Tentar Re-conectar</button>
+                </div>
+             </div>
+           )}
            {renderView()}
         </main>
       </div>

@@ -18,6 +18,8 @@ import { supabase } from '../services/supabaseClient';
 import SalaryMap from './SalaryMap';
 import ProfessionManager from './ProfessionManager';
 import Employees from './Employees';
+import EffectivenessMap from './EffectivenessMap';
+import SalaryListReport from './SalaryListReport';
 
 // --- COMPONENTES AUXILIARES ---
 
@@ -27,11 +29,12 @@ interface AttendanceGridProps {
   processingYear: number;
   months: string[];
   onCancel: () => void;
-  onConfirm: (attData: Record<number, string>) => void;
+  onConfirm: (attData: Record<number, string>, subs: { trans: number, alim: number }) => void;
 }
 
 const AttendanceGrid: React.FC<AttendanceGridProps> = ({ emp, processingMonth, processingYear, months, onCancel, onConfirm }) => {
     const [attData, setAttData] = useState<Record<number, string>>({});
+    const [subs, setSubs] = useState({ trans: 0, alim: 0 });
     const daysInMonth = new Date(processingYear, processingMonth, 0).getDate();
     const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
     const dayNames = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'];
@@ -84,13 +87,9 @@ const AttendanceGrid: React.FC<AttendanceGridProps> = ({ emp, processingMonth, p
                                 { label: 'Horas Extra', key: 'extra', color: 'bg-white', isManual: true },
                                 { label: 'Horas Perdidas', key: 'perdidas', color: 'bg-white', isManual: true, textRed: true },
                                 { label: 'Local de Serviço', key: 'local', color: 'bg-white', isManual: true },
-                                { label: 'Alimentação', key: 'alim', color: 'bg-green-100', isManual: true, empty: true },
-                                { label: 'Transporte', key: 'transp', color: 'bg-green-100', isManual: true, empty: true },
                             ].map((row, rIdx) => (
                                 <tr key={rIdx} className={`${row.color} hover:opacity-90`}>
-                                    <td className={`border border-slate-300 p-1 font-bold ${row.textRed ? 'text-red-600' : 'text-slate-700'} ${rIdx > 8 ? 'pl-4' : ''}`}>
-                                        {rIdx === 9 ? <span className="text-[8px] font-bold block mb-[-4px]">Subsídios</span> : null}
-                                        {rIdx === 3 ? <span className="text-[8px] font-bold block mb-[-4px]">Faltas</span> : null}
+                                    <td className={`border border-slate-300 p-1 font-bold ${row.textRed ? 'text-red-600' : 'text-slate-700'}`}>
                                         {row.label}
                                     </td>
                                     {days.map(d => (
@@ -117,19 +116,48 @@ const AttendanceGrid: React.FC<AttendanceGridProps> = ({ emp, processingMonth, p
                                             days.forEach(d => { newAtt[d] = row.key; });
                                             setAttData(newAtt);
                                         }}>
-                                        <div className="w-4 h-4 rounded-full border-2 border-slate-400 mx-auto bg-white flex items-center justify-center">
-                                            <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
-                                        </div>
+                                        {row.isRadio && (
+                                            <div className="w-4 h-4 rounded-full border-2 border-slate-400 mx-auto bg-white flex items-center justify-center">
+                                                <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
+                                            </div>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
+                            {/* Subsídios em Branco para Inserção Manual */}
+                            <tr className="bg-emerald-50">
+                                <td className="border border-slate-300 p-1 font-black text-[10px] uppercase text-emerald-800">Subsídio Alimentação</td>
+                                <td colSpan={daysInMonth} className="border border-slate-300 p-0">
+                                    <input 
+                                        type="number" 
+                                        className="w-full h-8 bg-transparent px-4 font-black text-emerald-700 outline-none" 
+                                        placeholder="Inserir Valor Manual..." 
+                                        value={subs.alim || ''}
+                                        onChange={e => setSubs({...subs, alim: Number(e.target.value)})}
+                                    />
+                                </td>
+                                <td className="border border-slate-300"></td>
+                            </tr>
+                            <tr className="bg-blue-50">
+                                <td className="border border-slate-300 p-1 font-black text-[10px] uppercase text-blue-800">Subsídio Transporte</td>
+                                <td colSpan={daysInMonth} className="border border-slate-300 p-0">
+                                    <input 
+                                        type="number" 
+                                        className="w-full h-8 bg-transparent px-4 font-black text-blue-700 outline-none" 
+                                        placeholder="Inserir Valor Manual..." 
+                                        value={subs.trans || ''}
+                                        onChange={e => setSubs({...subs, trans: Number(e.target.value)})}
+                                    />
+                                </td>
+                                <td className="border border-slate-300"></td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
 
                 <div className="mt-auto pt-8 flex justify-end gap-2">
                     <button onClick={onCancel} className="px-6 py-2 bg-slate-400 text-white font-bold uppercase rounded-lg border-b-4 border-slate-600 hover:bg-slate-500 transition">Cancelar</button>
-                    <button onClick={() => onConfirm(attData)} className="px-16 py-2 bg-gradient-to-b from-slate-200 to-slate-400 border-2 border-slate-500 rounded-full text-slate-800 font-bold text-lg hover:shadow-lg transition">Processar Efetividade</button>
+                    <button onClick={() => onConfirm(attData, subs)} className="px-16 py-2 bg-gradient-to-b from-slate-200 to-slate-400 border-2 border-slate-500 rounded-full text-slate-800 font-bold text-lg hover:shadow-lg transition">Processar Efetividade</button>
                 </div>
             </div>
         </div>
@@ -149,8 +177,8 @@ const SalaryReceipt: React.FC<SalaryReceiptProps> = ({ data, months, onClose, on
         baseSalary: data.baseSalary || 0,
         complement: 0,
         bonus: 0,
-        subsidyFood: emp.subsidyFood || 0,
-        subsidyTransport: emp.subsidyTransport || 0,
+        subsidyFood: data.subsAlimManual || emp.subsidyFood || 0,
+        subsidyTransport: data.subsTransManual || emp.subsidyTransport || 0,
         absences: data.hoursAbsence || 0
     });
 
@@ -181,38 +209,41 @@ const SalaryReceipt: React.FC<SalaryReceiptProps> = ({ data, months, onClose, on
             grossTotal: calculatedData.grossTotal,
             inss: calculatedData.inss,
             irt: calculatedData.irt,
-            netTotal: calculatedData.netTotal
+            netTotal: calculatedData.netTotal,
+            month: data.month,
+            year: data.year,
+            isProcessed: true
         };
         onProcess(slip);
     };
 
     return (
         <div className="fixed inset-0 z-[130] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in zoom-in-95">
-            <div className="bg-white rounded-none shadow-2xl w-full max-w-4xl p-10 flex flex-col font-sans text-slate-900 relative border-4 border-slate-800">
-                <button onClick={onClose} className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-full transition text-slate-400"><X/></button>
+            <div className="bg-white rounded-none shadow-2xl w-full max-w-6xl max-h-[85vh] p-8 flex flex-col font-sans text-slate-900 relative border-4 border-slate-800 scale-90 origin-center overflow-auto">
+                <button onClick={onClose} className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-full transition text-slate-400 print:hidden"><X/></button>
                 
-                <div className="text-center mb-8 border-b-8 border-slate-200 pb-4">
-                    <h1 className="text-2xl font-black uppercase tracking-[0.2em] border-y-2 border-slate-800 py-2 inline-block px-12 italic tracking-tighter">Recibo de Salário</h1>
+                <div className="text-center mb-6 border-b-4 border-slate-200 pb-2">
+                    <h1 className="text-xl font-black uppercase tracking-[0.2em] border-y border-slate-800 py-1 inline-block px-10 italic">Recibo de Salário</h1>
                 </div>
 
-                <div className="flex justify-between items-end mb-6">
+                <div className="flex justify-between items-end mb-4">
                     <div className="flex items-end gap-6">
-                        <span className="text-3xl font-black uppercase italic tracking-tighter text-slate-800">{emp.name.toUpperCase()}</span>
+                        <span className="text-2xl font-black uppercase italic tracking-tighter text-slate-800">{emp.name.toUpperCase()}</span>
                     </div>
                     <div className="text-right">
-                        <span className="text-lg font-bold text-slate-600 uppercase italic">{months[data.month - 1]} de {data.year}</span>
+                        <span className="text-base font-bold text-slate-600 uppercase italic">{months[data.month - 1]} de {data.year}</span>
                     </div>
                 </div>
 
-                <div className="flex-1 space-y-1">
-                    <div className="grid grid-cols-[40px_1fr_100px_200px] gap-2 border-b-2 border-slate-800 pb-1 text-[10px] font-black uppercase text-slate-600">
+                <div className="flex-1 space-y-0.5">
+                    <div className="grid grid-cols-[40px_1fr_100px_180px] gap-2 border-b-2 border-slate-800 pb-1 text-[9px] font-black uppercase text-slate-600">
                         <span>Cód</span>
                         <span className="text-center">Descrição do Rendimento / Desconto</span>
                         <span className="text-center">Qtd/Ref</span>
                         <span className="text-right pr-4">Valor (AOA)</span>
                     </div>
 
-                    <div className="space-y-1 py-4">
+                    <div className="space-y-0.5 py-2">
                         {[
                             { code: '01', label: 'Vencimento Base Profissional', key: 'baseSalary', qty: 30 },
                             { code: '02', label: 'Complemento Salarial', key: 'complement', qty: '-' },
@@ -221,14 +252,14 @@ const SalaryReceipt: React.FC<SalaryReceiptProps> = ({ data, months, onClose, on
                             { code: '08', label: 'Subsidio Transporte', key: 'subsidyTransport', qty: '-' },
                             { code: '09', label: 'Subsidio Alimentação', key: 'subsidyFood', qty: '-' },
                         ].map((row, idx) => (
-                            <div key={idx} className="grid grid-cols-[40px_1fr_100px_200px] gap-2 items-center h-10 border-b border-slate-50">
-                                <span className="font-bold text-slate-400 text-[10px]">{row.code}</span>
-                                <span className="font-bold text-slate-700 text-xs uppercase italic">{row.label}</span>
-                                <span className="text-center font-bold text-slate-500">{row.qty}</span>
+                            <div key={idx} className="grid grid-cols-[40px_1fr_100px_180px] gap-2 items-center h-8 border-b border-slate-50">
+                                <span className="font-bold text-slate-400 text-[9px]">{row.code}</span>
+                                <span className="font-bold text-slate-700 text-[10px] uppercase italic">{row.label}</span>
+                                <span className="text-center font-bold text-slate-500 text-[10px]">{row.qty}</span>
                                 <div className="flex justify-end pr-4">
                                     <input 
                                         type="number"
-                                        className="bg-slate-50 border-2 border-slate-200 rounded-lg px-4 py-1 w-32 text-right font-black text-sm outline-none focus:border-blue-500 shadow-inner"
+                                        className="bg-slate-50 border border-slate-200 rounded px-2 py-0.5 w-28 text-right font-black text-xs outline-none focus:border-blue-500 shadow-inner"
                                         value={(editableValues as any)[row.key]}
                                         onChange={e => setEditableValues({...editableValues, [row.key]: Number(e.target.value)})}
                                     />
@@ -237,37 +268,37 @@ const SalaryReceipt: React.FC<SalaryReceiptProps> = ({ data, months, onClose, on
                         ))}
                     </div>
 
-                    <div className="grid grid-cols-[1fr_200px] border-t-4 border-slate-800 pt-4 pb-4 mt-6 bg-slate-50 px-2 rounded-xl">
-                        <span className="font-black text-slate-800 text-sm uppercase italic">Total de Vencimento Bruto Antes de Impostos</span>
-                        <div className="text-right pr-4 font-black text-xl text-slate-900">
+                    <div className="grid grid-cols-[1fr_180px] border-t-2 border-slate-800 pt-2 pb-2 mt-4 bg-slate-50 px-2 rounded-lg">
+                        <span className="font-black text-slate-800 text-[11px] uppercase italic">Total de Vencimento Bruto</span>
+                        <div className="text-right pr-4 font-black text-base text-slate-900">
                             {formatCurrency(calculatedData.grossTotal)}
                         </div>
                     </div>
 
-                    <div className="space-y-4 pt-6">
-                        <p className="font-black text-slate-800 text-[10px] uppercase tracking-widest border-b pb-1">Impostos e Deduções Legais (LGT Angola)</p>
-                        <div className="grid grid-cols-2 gap-8">
-                             <div className="space-y-2">
-                                <div className="flex justify-between items-center text-xs">
+                    <div className="space-y-2 pt-4">
+                        <p className="font-black text-slate-800 text-[9px] uppercase tracking-widest border-b pb-1">Impostos LGT Angola</p>
+                        <div className="grid grid-cols-2 gap-6">
+                             <div className="space-y-1">
+                                <div className="flex justify-between items-center text-[10px]">
                                     <span className="font-bold text-slate-500 uppercase italic">Segurança Social (3%)</span>
                                     <span className="font-black text-red-600 italic">-{formatCurrency(calculatedData.inss)}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="font-bold text-slate-500 uppercase italic">IRT (Retenção na Fonte)</span>
+                                <div className="flex justify-between items-center text-[10px]">
+                                    <span className="font-bold text-slate-500 uppercase italic">IRT</span>
                                     <span className="font-black text-red-600 italic">-{formatCurrency(calculatedData.irt)}</span>
                                 </div>
                              </div>
-                             <div className="bg-slate-900 text-white p-6 rounded-3xl flex flex-col items-center justify-center shadow-2xl transform hover:scale-105 transition-all">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-1 italic">Total Líquido a Pagar</span>
-                                <span className="text-3xl font-black font-mono tracking-tighter">{formatCurrency(calculatedData.netTotal)}</span>
+                             <div className="bg-slate-900 text-white p-4 rounded-2xl flex flex-col items-center justify-center shadow-lg">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-blue-400 italic">Líquido a Pagar</span>
+                                <span className="text-xl font-black font-mono tracking-tighter">{formatCurrency(calculatedData.netTotal)}</span>
                              </div>
                         </div>
                     </div>
                 </div>
 
-                <div className="mt-8 flex justify-end gap-3 print:hidden">
-                    <button onClick={onClose} className="px-8 py-3 bg-slate-200 text-slate-600 font-black uppercase rounded-2xl hover:bg-slate-300 transition text-sm">Cancelar</button>
-                    <button onClick={handleProcessFinal} className="bg-[#a7f3d0] hover:bg-[#86efac] text-slate-700 font-black px-16 py-3 rounded-2xl shadow-xl transition transform active:scale-95 text-lg uppercase tracking-widest">Processar Salário</button>
+                <div className="mt-6 flex justify-end gap-3 print:hidden">
+                    <button onClick={onClose} className="px-6 py-2 bg-slate-200 text-slate-600 font-black uppercase rounded-xl hover:bg-slate-300 transition text-xs">Voltar</button>
+                    <button onClick={handleProcessFinal} className="bg-[#a7f3d0] hover:bg-[#86efac] text-slate-700 font-black px-12 py-2 rounded-xl shadow-lg transition transform active:scale-95 text-base uppercase tracking-widest">Processar Salário</button>
                 </div>
             </div>
         </div>
@@ -285,6 +316,7 @@ interface HumanResourcesProps {
   onSaveVacation: (v: HrVacation) => void;
   payroll: SalarySlip[]; 
   onProcessPayroll: (slips: SalarySlip[]) => void;
+  onClearPayroll?: (empId: string, month: number, year: number) => void;
   professions: Profession[];
   onSaveProfession: (p: Profession) => void;
   onDeleteProfession: (id: string) => void;
@@ -298,14 +330,18 @@ interface HumanResourcesProps {
 
 const HumanResources: React.FC<HumanResourcesProps> = ({ 
     employees, onSaveEmployee, transactions, onSaveTransaction, 
-    vacations, onSaveVacation, payroll, onProcessPayroll,
+    vacations, onSaveVacation, payroll, onProcessPayroll, onClearPayroll,
     professions, onSaveProfession, onDeleteProfession,
     contracts, onSaveContract, attendance, onSaveAttendance,
     company, currentView
 }) => {
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'GESTÃO' | 'ASSIDUIDADE' | 'PROFISSÕES' | 'MAPAS' | 'ORDEM_TRANSFERENCIA'>(
-    currentView === 'HR_TRANSFER_ORDER' ? 'ORDEM_TRANSFERENCIA' : 'DASHBOARD'
-  );
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'GESTÃO' | 'ASSIDUIDADE' | 'PROFISSÕES' | 'MAPAS' | 'ORDEM_TRANSFERENCIA' | 'EFETIVIDADE_MAP' | 'VENCIMENTO_LIST'>(() => {
+    if (currentView === 'HR_TRANSFER_ORDER') return 'ORDEM_TRANSFERENCIA';
+    if (currentView === 'HR_EFFECTIVENESS_MAP') return 'EFETIVIDADE_MAP';
+    if (currentView === 'HR_SALARY_LIST') return 'VENCIMENTO_LIST';
+    return 'DASHBOARD';
+  });
+
   const [processingMonth, setProcessingMonth] = useState(new Date().getMonth() + 1);
   const [processingYear, setProcessingYear] = useState(new Date().getFullYear());
   const [selectedEmpIds, setSelectedEmpIds] = useState<Set<string>>(new Set());
@@ -325,18 +361,31 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
         const empId = Array.from(selectedEmpIds)[0];
         const emp = employees.find(e => e.id === empId);
         if (emp) { setActiveProcessingEmp(emp); setIsProcessingEffectiveness(true); }
-    } else if (val === 'PROCESS_SALARIO') {
-        alert("Utilize a 'Assiduidade Técnica' para processar salários com base na efetividade.");
-    } else if (val === 'PRINT_RECIBOS') {
-        window.print();
     } else if (val === 'DELETE_EFECTIVIDADE') {
         alert("Efetividades do período removidas da cloud.");
+    } else if (val === 'PROCESS_SALARIO') {
+        if (selectedEmpIds.size !== 1) return alert("Selecione 1 funcionário para processar salário.");
+        const empId = Array.from(selectedEmpIds)[0];
+        const emp = employees.find(e => e.id === empId);
+        if (emp) {
+            setReceiptData({ 
+                emp, month: processingMonth, year: processingYear, baseSalary: emp.baseSalary 
+            });
+            setShowSalaryReceipt(true);
+        }
+    } else if (val === 'PRINT_RECIBOS') {
+        window.print();
+    } else if (val === 'DELETE_SALARIO') {
+        if (selectedEmpIds.size === 0) return alert("Selecione funcionários para apagar salários.");
+        if (confirm("Deseja apagar os processamentos salariais selecionados?")) {
+            selectedEmpIds.forEach(id => onClearPayroll?.(id, processingMonth, processingYear));
+            alert("Salários removidos.");
+        }
     }
   };
 
-  const getProcessedNet = (empId: string) => {
-    const slip = payroll.find(p => p.employeeId === empId);
-    return slip ? formatCurrency(slip.netTotal) : null;
+  const getProcessedSlip = (empId: string) => {
+    return payroll.find(p => p.employeeId === empId && p.month === processingMonth && p.year === processingYear);
   };
 
   const renderAssiduidade = () => (
@@ -348,14 +397,16 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
                 processingYear={processingYear}
                 months={months}
                 onCancel={() => setIsProcessingEffectiveness(false)}
-                onConfirm={(data) => {
+                onConfirm={(data, s) => {
                     setIsProcessingEffectiveness(false);
                     setReceiptData({ 
                         emp: activeProcessingEmp, 
                         month: processingMonth, 
                         year: processingYear, 
                         baseSalary: activeProcessingEmp.baseSalary, 
-                        hoursAbsence: Object.values(data).filter(v => v === 'injust').length 
+                        hoursAbsence: Object.values(data).filter(v => v === 'injust').length,
+                        subsAlimManual: s.alim,
+                        subsTransManual: s.trans
                     });
                     setShowSalaryReceipt(true);
                 }}
@@ -370,7 +421,6 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
                 onProcess={(slip) => {
                     onProcessPayroll([slip]);
                     setShowSalaryReceipt(false);
-                    alert("Cálculo concluído! O valor processado já está visível na lista.");
                 }}
             />
         )}
@@ -417,7 +467,7 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
                 <tbody className="divide-y divide-slate-200">
                     {employees.map((emp, idx) => {
                         const isSelected = selectedEmpIds.has(emp.id);
-                        const processedValue = getProcessedNet(emp.id);
+                        const slip = getProcessedSlip(emp.id);
                         return (
                             <tr key={emp.id} className={`${isSelected ? 'bg-blue-50/50' : 'hover:bg-blue-50/30'} transition-colors group italic`}>
                                 <td className="p-2 border-r text-center">
@@ -449,8 +499,8 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
                                 <td className="p-2 border-r text-right">-</td>
                                 <td className="p-2 border-r text-center"><input type="checkbox" className="w-3 h-3" checked={emp.isMagic}/></td>
                                 <td className="p-2 border-r text-center">
-                                    {processedValue ? (
-                                        <div className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">{processedValue}</div>
+                                    {slip ? (
+                                        <div className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">{formatCurrency(slip.netTotal)}</div>
                                     ) : (
                                         <button 
                                             onClick={() => { setActiveProcessingEmp(emp); setIsProcessingEffectiveness(true); }}
@@ -462,13 +512,18 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
                                 </td>
                                 <td className="p-2 border-r text-center font-black text-slate-400">.</td>
                                 <td className="p-2 border-r text-center">
-                                    <input type="checkbox" checked={!!processedValue} className="w-4 h-4 rounded accent-emerald-600"/>
+                                    <input type="checkbox" checked={!!slip} className="w-4 h-4 rounded accent-emerald-600"/>
                                 </td>
                                 <td className="p-2 text-center">
                                     <button 
-                                        onClick={() => window.print()} 
-                                        disabled={!processedValue}
-                                        className={`p-1 rounded transition-colors ${processedValue ? 'text-blue-600 hover:bg-slate-100' : 'text-slate-200 cursor-not-allowed pointer-events-none opacity-20'}`}
+                                        onClick={() => {
+                                            if (slip) {
+                                                setReceiptData({ emp, month: processingMonth, year: processingYear, ...slip });
+                                                setShowSalaryReceipt(true);
+                                            }
+                                        }} 
+                                        disabled={!slip}
+                                        className={`p-1 rounded transition-colors ${slip ? 'text-blue-600 hover:bg-slate-100' : 'text-slate-200 cursor-not-allowed opacity-20'}`}
                                     >
                                         <Printer size={14}/>
                                     </button>
@@ -497,10 +552,11 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
                             value="SELECT"
                         >
                             <option value="SELECT">Selecionar</option>
-                            <option value="PROCESS_EFECTIVIDADE">Processar efetividade</option>
-                            <option value="DELETE_EFECTIVIDADE">Apagar efetividade</option>
-                            <option value="PROCESS_SALARIO">Processar salário</option>
-                            <option value="PRINT_RECIBOS">Imprimir recibos de salários</option>
+                            <option value="PROCESS_EFECTIVIDADE">Processar Efetividade</option>
+                            <option value="DELETE_EFECTIVIDADE">Apagar Efetividade</option>
+                            <option value="PROCESS_SALARIO">Processar Salário</option>
+                            <option value="PRINT_RECIBOS">Imprimir Recibos de Salário</option>
+                            <option value="DELETE_SALARIO">Apagar Salário</option>
                         </select>
                     </div>
                 </div>
@@ -510,6 +566,8 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
                   {id:'DASHBOARD', label: 'Painel Geral'},
                   {id:'GESTÃO', label: 'Funcionários'},
                   {id:'ASSIDUIDADE', label: 'Assiduidade Técnica'},
+                  {id:'EFETIVIDADE_MAP', label: 'Mapa de Efetividade'},
+                  {id:'VENCIMENTO_LIST', label: 'Listagem por Vencimento'},
                   {id:'PROFISSÕES', label: 'Profissões'},
                   {id:'MAPAS', label: 'Mapas de Salários'},
                   {id:'ORDEM_TRANSFERENCIA', label: 'Ordem Transferência'}
@@ -527,6 +585,8 @@ const HumanResources: React.FC<HumanResourcesProps> = ({
 
         {activeTab === 'GESTÃO' && <Employees employees={employees} onSaveEmployee={onSaveEmployee} workLocations={[]} professions={professions} />}
         {activeTab === 'ASSIDUIDADE' && renderAssiduidade()}
+        {activeTab === 'EFETIVIDADE_MAP' && <EffectivenessMap employees={employees} company={company} year={processingYear} month={processingMonth} />}
+        {activeTab === 'VENCIMENTO_LIST' && <SalaryListReport employees={employees} payroll={payroll} year={processingYear} />}
         {activeTab === 'MAPAS' && <SalaryMap payroll={payroll} employees={employees} />}
         {activeTab === 'PROFISSÕES' && <ProfessionManager professions={professions} onSave={onSaveProfession} onDelete={onDeleteProfession}/>}
         {activeTab === 'DASHBOARD' && <div className="p-20 text-center text-slate-300 font-black uppercase tracking-[10px] opacity-30 italic text-xl">Imatec RH Cloud System</div>}
